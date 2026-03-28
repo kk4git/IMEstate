@@ -2,9 +2,11 @@
 #include <vector>
 #include <cstdio>
 #include <windows.h>
+#include <dwmapi.h>
 
 #pragma comment (lib, "gdi32.lib")
 #pragma comment (lib, "user32.lib")
+#pragma comment (lib, "dwmapi.lib")
 
 // A class managing verbosity of info. Supports INFO? macros.
 struct VerboseMan {
@@ -128,7 +130,7 @@ static int imeFull(BW8& bw8) {
     int z3 = bw8.numB( 0,24, 18,57), z4 = bw8.numB(66,24, 30,57);
     int z5 = bw8.numB(21,51, 21,30), z6 = bw8.numB(45,24, 21,18);
     bw8.debugDraw(); 
-    INFO2("Full: Check = (%d,%d), Zero = (%d,%d,%d,%d,%d,%d). ", c1, c2, z1, z2, z3, z4, z5, z6);
+    INFO2("imeFull: Check = (%d,%d), Zero = (%d,%d,%d,%d,%d,%d). ", c1, c2, z1, z2, z3, z4, z5, z6);
     if (z1 + z2 + z3 + z4 + z5 + z6 > 20) return -1; // 0,0,0,0,0,0,0
     if (c1 > 100 && c2 < 12) return 1;               // Half: 142, 7
     if (c1 < 100 && c2 > 12) return 2;               // Full:  52,29
@@ -140,7 +142,7 @@ static int imeWide(BW8& bw8) {
     int z1 = bw8.numB( 6,12, 18,12), z2 = bw8.numB(66,12, 18,12);
     int z3 = bw8.numB( 6,75, 18,12), z4 = bw8.numB(66,75, 18,12);
     bw8.debugDraw(); 
-    INFO2("Wide: Check = SUM(%d,%d,%d)<120, SUM(%d,%d,%d,%d) <= 20. ", c1, c2, c3, z1, z2, z3, z4);
+    INFO2("imeWide: Check = SUM(%d,%d,%d)<120, SUM(%d,%d,%d,%d) <= 20. ", c1, c2, c3, z1, z2, z3, z4);
     if (z1 + z2 + z3 + z4 > 20) return -1;    // 9,0,0,0
     if (c1 + c2 + c3 < 120) return 1;         // Narrow: 3,27,45
     if (c1>200 && c2>200 && c3>120) return 2; // Wide: 420,432,234
@@ -151,16 +153,16 @@ static int imeEnCn(BW8& bw8) {
     int ul = bw8.numB(27,24,  9, 9), um = bw8.numB(38,23,  8, 7), ur = bw8.numB(48,24,  9, 9);
     int dl = bw8.numB(12,72, 18,12), dm = bw8.numB(36,71, 12,13), dr = bw8.numB(54,72, 18,12);
     bw8.debugDraw();
-    INFO2("EnCN: UP = (%d,%d,%d), DOWN = (%d,%d,%d). ", ul, um, ur, dl, dm, dr);
+    INFO2("imeEnCN: UP = (%d,%d,%d), DOWN = (%d,%d,%d). ", ul, um, ur, dl, dm, dr);
     if (abs(ul-ur)>10 || abs(dl-dr)>10) return -1; // Symmetry
     if (ul>30 && um<20 && ur>30 && dl>30 && dm<20 && dr>30) return 1; // En: (48,16,48) (61, 0,61)
     if (ul<30 && um>20 && ur<30 && dl<30 && dm>20 && dl<30) return 2; // Cn: ( 9,28, 9) ( 0,36, 0)
     return -1;
 }
 
-static int imeState(BW8& bw8) {
+static int examIME(BW8& bw8) {
     if (bw8.allBlack()) {
-        INFO1("imeState: all black, IME window invisible.\n");
+        INFO1("examIME: All black, IME window invisible.\n");
         return -1;
     }
 
@@ -171,9 +173,9 @@ static int imeState(BW8& bw8) {
         int y = 78; i1 = bw8.crop(6, y); y += 96; i2 = bw8.crop(6, y); y += 96; i3 = bw8.crop(6, y);
     }
 
-    int encn = imeEnCn(i1); INFO1("EnCn = %d\n", encn);
-    int wide = imeWide(i2); INFO1("Wide = %d\n", wide);
-    int full = imeFull(i3); INFO1("Full = %d\n", full);
+    int encn = imeEnCn(i1); INFO1("imeEnCn = %d\n", encn);
+    int wide = imeWide(i2); INFO1("imeWide = %d\n", wide);
+    int full = imeFull(i3); INFO1("imeFull = %d\n", full);
 
     if (encn<0 || wide<0 || full<0) return -1;
     return encn*100 + wide*10 + full;
@@ -186,7 +188,7 @@ static int pixelScale3(HWND hwnd, int w, int h) { // Scale 300% * 96 = 288(DPI)
     HBITMAP bmMem = CreateCompatibleBitmap(dc0, w, h), bm3 = CreateCompatibleBitmap(dc0, w3, h3);
     HGDIOBJ obMem = SelectObject(dcMem, bmMem), ob3 = SelectObject(dc3, bm3);
     if (!PrintWindow(hwnd, dcMem, PW_RENDERFULLCONTENT)) {
-        INFO1("PrintWindow failed!\n");
+        INFO1("pixelS3: PrintWindow failed!\n");
         if (HDC dcWin = GetWindowDC(hwnd)) {
             BitBlt(dcMem, 0, 0, w, h, dcWin, 0, 0, SRCCOPY | CAPTUREBLT);
             ReleaseDC(hwnd, dcWin);
@@ -210,25 +212,13 @@ static int pixelScale3(HWND hwnd, int w, int h) { // Scale 300% * 96 = 288(DPI)
     DeleteObject(bm3); DeleteObject(bmMem); ReleaseDC(NULL, dc0);
 
     int ret = -1;
-    if (!got) INFO1("GetDIBits failed!\n");
+    if (!got) INFO1("pixelS3: GetDIBits failed!\n");
     else {
         BW8 bw8(p32RGB, w3, h3);
-        ret = imeState(bw8);
+        ret = examIME(bw8);
     }
     delete[] p32RGB;
     return ret;
-}
-
-static std::string GetProcessExeName(DWORD pid) {
-    std::string exe = "";
-    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ, FALSE, pid);
-    if (h) {
-        DWORD siz = MAX_PATH; char buf[MAX_PATH];
-        if (QueryFullProcessImageNameA(h, 0, buf, &siz))
-            exe = buf;
-        CloseHandle(h);
-    }
-    return exe;
 }
 
 static int examWin(HWND hwnd) {
@@ -236,27 +226,25 @@ static int examWin(HWND hwnd) {
         INFO2("examWin: invalid HWND=0x%p!\n", hwnd);
         return -1;
     }
-    char title[512] = {0}, className[256] = {0};
-    GetWindowTextA(hwnd, title, _countof(title));
-    GetClassNameA(hwnd, className, _countof(className));
 
     DWORD pid, tid = GetWindowThreadProcessId(hwnd, &pid);
-    std::string exe = GetProcessExeName(pid);
     auto style = GetWindowLongPtr(hwnd, GWL_STYLE), exstyle = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
 
     UINT dpi = GetDpiForWindow(hwnd); // NOT accurate!
-    RECT rc; GetWindowRect(hwnd, &rc);
+    RECT rc;
+    if (S_OK != DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, &rc, sizeof(RECT))) return -1;
     int w = rc.right-rc.left, h = rc.bottom-rc.top;
     float rwh = float(w) / h, rhw = float(h) / w;
-    auto like = [=](float r, float c){ return 0.01 * c > abs(r - c); };
+
+    INFO2("examWin: HWND=0x%IX P/TID=%d/%d Style/Ex=0x%IX/0x%IX LTRB(%d,%d,%d,%d)\n",
+                   (size_t)hwnd, pid, tid, style, exstyle, rc.left, rc.top, rc.right, rc.bottom);
+    INFO2("\t Size(%d,%d) DPI=%d Ratio(%.4f,%.4f) ", w, h, dpi, rwh, rhw);
+
     if (abs(rwh-5.11111f) > 0.051111f && abs(rhw-5.22222f) > 0.052222f) {
-        INFO2("examWin: HWND=0x%p Wrong ratio! DPI(%d) Size(%d,%d) Ratio(%.4f,%.4f)\n", hwnd, dpi, w, h, rwh, rhw);
+        INFO2("\t Wrong ratio!\n");
         return -1;
     }
-
-    INFO2("examWin: HWND=0x%p PID=%d TID=%d EXE=%s LTRB=(%d,%d,%d,%d)\n", hwnd, pid, tid, exe.c_str(), rc.left, rc.top, rc.right, rc.bottom);
-    INFO2("\t Title='%s' Class='%s' Style=0x%IX ExStyle=0x%IX\n", title, className, style, exstyle);
-    INFO2("\t Size(%d,%d) DPI(%d) Ratio(%.4f,%.4f)\n", w, h, dpi, rwh, rhw);
+    INFO2("\n");
 
     return  pixelScale3(hwnd, w, h);
 }
@@ -291,15 +279,9 @@ static void initConsole(std::string cmd) {
     std::printf(v? "Verbose level: %d\n" : "IMEstate: Retrive states of IME window.\n  -v, -vv, -vvv: Verbose level.\n", v);
 }
 
-
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    SetProcessDPIAware();
-    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-
     initConsole(lpCmdLine);
-
     int rc = walkWin();
     INFO1("Final: %d\n", rc);
-
     return rc;
 }
